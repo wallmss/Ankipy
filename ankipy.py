@@ -14,6 +14,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
 from datetime import datetime
+import msvcrt
+import time
 
 ANKI_CONNECT_URL = "http://localhost:8765"
 CONFIG_FILE = Path(__file__).parent / "config.txt"
@@ -96,11 +98,42 @@ def selecionar_audio_manual(frase_ingles):
     return arquivo if arquivo else None
 
 def nota_existe(deck_nome, modelo_nome, frente_texto):
-    """Verifica se já existe uma nota com o mesmo texto na frente."""
+    """Verifica se já existe uma nota com o mesmo texto na frente (ignorando áudio)."""
+    # Remove a tag [sound:...] e caracteres problemáticos
     texto_puro = re.sub(r'\[sound:.*?\]', '', frente_texto).strip()
-    query = f'deck:"{deck_nome}" model:{modelo_nome} "Frente:{texto_puro}"'
-    ids = anki_call("findNotes", query=query)
-    return len(ids) > 0
+    # Escapa aspas duplas para a busca do Anki
+    texto_escapado = texto_puro.replace('"', '\\"')
+    # Monta a query com escape adequado
+    query = f'deck:"{deck_nome}" model:{modelo_nome} "Frente:{texto_escapado}"'
+    try:
+        ids = anki_call("findNotes", query=query)
+        return len(ids) > 0
+    except Exception as e:
+        # Se a busca falhar (ex: caractere muito especial), assume que não existe
+        # e continua, mas avisa o usuário
+        print(f"⚠️ Erro ao verificar duplicata (ignorando): {e}")
+        return False
+    
+def perguntar_duplicata(frase_ingles):
+    """Pergunta ao usuário se deseja adicionar mesmo uma frase duplicada.
+    Retorna True se apertar 'S' ou 's', False se apertar 'N' ou 'n' ou Enter, ou timeout de 10s.
+    """
+    print(f"\n⚠️ FRASE DUPLICADA: {frase_ingles[:70]}...")
+    print("Deseja adicionar mesmo assim? (S = sim, N = não, Enter = não após 10s)")
+    
+    inicio = time.time()
+    while time.time() - inicio < 10:
+        if msvcrt.kbhit():
+            tecla = msvcrt.getch().decode('utf-8').lower()
+            if tecla == 's':
+                print(" ✅ Adicionando...")
+                return True
+            elif tecla == 'n' or tecla == '\r':  # Enter é '\r' no Windows
+                print(" ❌ Ignorando duplicata.")
+                return False
+        time.sleep(0.1)
+    print(" ⏱️ Timeout: ignorando duplicata.")
+    return False
 
 def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
     anki_call("createDeck", deck=deck_nome)
@@ -114,13 +147,13 @@ def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
         frase_chave = sanitizar_nome(ingles[:50])
         mp3_encontrado = None
         
-        # Tenta encontrar automaticamente
+        # Procura áudio automaticamente
         for chave, nome_mp3 in mp3s_info.items():
             if frase_chave.startswith(chave) or chave.startswith(frase_chave):
                 mp3_encontrado = nome_mp3
                 break
         
-        # Se não encontrou, pergunta ao usuário
+        # Se não achou, manual
         if not mp3_encontrado:
             print(f"\n⚠️ Áudio não encontrado para: {ingles[:60]}...")
             caminho_audio = selecionar_audio_manual(ingles)
@@ -146,11 +179,11 @@ def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
             frente = ingles
             print(f"⚠️ Sem áudio, cartão será criado sem som.")
         
-        # Verificar duplicata
+        # Verifica duplicata
         if nota_existe(deck_nome, modelo_nome, frente):
-            print(f"⏭️ Frase já existe no deck (duplicada): {ingles[:50]}...")
             total_duplicados += 1
-            continue
+            if not perguntar_duplicata(ingles):
+                continue
         
         nota = {
             "deckName": deck_nome,
@@ -163,7 +196,7 @@ def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
         total_adicionados += 1
         print(f"✅ Cartão adicionado: {ingles[:50]}...")
     
-    print(f"\n📊 Resumo: {total_adicionados} cartões adicionados, {total_duplicados} duplicados ignorados.")
+    print(f"\n📊 Resumo: {total_adicionados} cartões adicionados, {total_duplicados} duplicados encontrados (alguns podem ter sido adicionados manualmente).")
     return total_adicionados
 
 def carregar_ultima_config():
