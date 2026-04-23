@@ -8,3 +8,7 @@ config.txt
 *.pyd
 .Python
 .env"JH 4/*.mp3" 
+AnkiPy.exe
+AnkiPy.spec
+build/
+dist/
