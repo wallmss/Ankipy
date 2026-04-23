@@ -1,0 +1,5 @@
+## 🔀 config.txt (modelo inicial)
+
+# Cole abaixo o caminho completo da pasta collection.media do Anki
+# Como encontrar: Abra o Anki > Ferramentas > Gerenciar Arquivos de Mídia > Abrir Pasta de Mídia
+C:\Users\wmsen\AppData\Roaming\Anki2\Wallace Senna\collection.media
