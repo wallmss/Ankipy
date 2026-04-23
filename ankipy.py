@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Ankipy - Importador de frases com áudio para o Anki
-- Lê configuração de config.txt (pasta de mídia)
-- Cria modelo de nota separado para cada importação
-- Template: frente (inglês + áudio), verso (tradução + frente)
+Ankipy - Importador automático de frases com áudio para Anki
 """
 
 import os
@@ -13,25 +10,25 @@ import json
 import shutil
 import urllib.request
 import urllib.error
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from pathlib import Path
 from datetime import datetime
 
 ANKI_CONNECT_URL = "http://localhost:8765"
 CONFIG_FILE = Path(__file__).parent / "config.txt"
+ULTIMA_CONFIG = Path(__file__).parent / "ultima_config.txt"
 
 def ler_pasta_media():
-    """Lê o caminho da collection.media do arquivo config.txt."""
     if not CONFIG_FILE.exists():
-        # Cria arquivo de exemplo
         exemplo = r"C:\Users\SeuUsuario\AppData\Roaming\Anki2\SeuPerfil\collection.media"
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             f.write("# Cole abaixo o caminho completo da pasta collection.media do Anki\n")
             f.write("# Como encontrar: Abra o Anki > Ferramentas > Gerenciar Arquivos de Mídia > Abrir Pasta de Mídia\n")
             f.write(f"{exemplo}\n")
-        print(f"❌ Arquivo config.txt não encontrado. Um modelo foi criado em {CONFIG_FILE}")
-        print("Edite o arquivo com o caminho correto e execute o script novamente.")
+        print(f"❌ config.txt não encontrado. Um modelo foi criado em {CONFIG_FILE}")
+        print("Edite o arquivo com o caminho correto e execute novamente.")
         exit(1)
-    
     with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
         for linha in f:
             linha = linha.strip()
@@ -72,8 +69,6 @@ def ler_pares_do_texto(caminho_txt):
     return pares
 
 def copiar_mp3s_para_media(pasta_origem):
-    if not PASTA_MIDIA_ANKI.exists():
-        raise Exception(f"Pasta de mídia não encontrada: {PASTA_MIDIA_ANKI}")
     mp3s = [f for f in os.listdir(pasta_origem) if f.endswith('.mp3')]
     copiados = 0
     for mp3 in mp3s:
@@ -87,7 +82,162 @@ def copiar_mp3s_para_media(pasta_origem):
             print(f"✓ Áudio já existe: {mp3}")
     return copiados
 
-def criar_modelo_unico(deck_nome, modelo_nome):
+def selecionar_audio_manual(frase_ingles):
+    root = tk.Tk()
+    root.withdraw()
+    msg = f"Áudio não encontrado automaticamente.\n\nFrase: {frase_ingles[:80]}...\n\nSelecione o arquivo MP3 correspondente (ou clique em Cancelar para pular)."
+    resposta = messagebox.askokcancel("Áudio faltando", msg)
+    if not resposta:
+        return None
+    arquivo = filedialog.askopenfilename(
+        title="Selecione o arquivo MP3",
+        filetypes=[("Arquivos MP3", "*.mp3")]
+    )
+    return arquivo if arquivo else None
+
+def nota_existe(deck_nome, modelo_nome, frente_texto):
+    """Verifica se já existe uma nota com o mesmo texto na frente."""
+    texto_puro = re.sub(r'\[sound:.*?\]', '', frente_texto).strip()
+    query = f'deck:"{deck_nome}" model:{modelo_nome} "Frente:{texto_puro}"'
+    ids = anki_call("findNotes", query=query)
+    return len(ids) > 0
+
+def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
+    anki_call("createDeck", deck=deck_nome)
+    print(f"✅ Deck '{deck_nome}' pronto.")
+    
+    mp3s_info = {sanitizar_nome(f): f for f in os.listdir(pasta_mp3) if f.endswith('.mp3')}
+    total_adicionados = 0
+    total_duplicados = 0
+    
+    for ingles, portugues in pares:
+        frase_chave = sanitizar_nome(ingles[:50])
+        mp3_encontrado = None
+        
+        # Tenta encontrar automaticamente
+        for chave, nome_mp3 in mp3s_info.items():
+            if frase_chave.startswith(chave) or chave.startswith(frase_chave):
+                mp3_encontrado = nome_mp3
+                break
+        
+        # Se não encontrou, pergunta ao usuário
+        if not mp3_encontrado:
+            print(f"\n⚠️ Áudio não encontrado para: {ingles[:60]}...")
+            caminho_audio = selecionar_audio_manual(ingles)
+            if caminho_audio:
+                nome_arquivo = os.path.basename(caminho_audio)
+                destino_origem = Path(pasta_mp3) / nome_arquivo
+                if not destino_origem.exists():
+                    shutil.copy2(caminho_audio, destino_origem)
+                    print(f"📀 Áudio copiado para pasta de origem: {nome_arquivo}")
+                destino_media = PASTA_MIDIA_ANKI / nome_arquivo
+                if not destino_media.exists():
+                    shutil.copy2(caminho_audio, destino_media)
+                    print(f"📀 Áudio copiado para mídia: {nome_arquivo}")
+                mp3_encontrado = nome_arquivo
+                mp3s_info[sanitizar_nome(nome_arquivo)] = nome_arquivo
+            else:
+                print(f"⏭️ Áudio ignorado para: {ingles[:40]}...")
+        
+        if mp3_encontrado:
+            frente = f"{ingles} [sound:{mp3_encontrado}]"
+            print(f"🔊 Áudio vinculado: {mp3_encontrado}")
+        else:
+            frente = ingles
+            print(f"⚠️ Sem áudio, cartão será criado sem som.")
+        
+        # Verificar duplicata
+        if nota_existe(deck_nome, modelo_nome, frente):
+            print(f"⏭️ Frase já existe no deck (duplicada): {ingles[:50]}...")
+            total_duplicados += 1
+            continue
+        
+        nota = {
+            "deckName": deck_nome,
+            "modelName": modelo_nome,
+            "fields": {"Frente": frente, "Verso": portugues},
+            "tags": ["importado_auto"],
+            "options": {"allowDuplicate": False}
+        }
+        anki_call("addNote", note=nota)
+        total_adicionados += 1
+        print(f"✅ Cartão adicionado: {ingles[:50]}...")
+    
+    print(f"\n📊 Resumo: {total_adicionados} cartões adicionados, {total_duplicados} duplicados ignorados.")
+    return total_adicionados
+
+def carregar_ultima_config():
+    config = {}
+    if ULTIMA_CONFIG.exists():
+        with open(ULTIMA_CONFIG, 'r', encoding='utf-8') as f:
+            for linha in f:
+                if '=' in linha:
+                    chave, valor = linha.strip().split('=', 1)
+                    config[chave] = valor
+    return config.get("pasta"), config.get("deck")
+
+def salvar_ultima_config(pasta, deck):
+    with open(ULTIMA_CONFIG, 'w', encoding='utf-8') as f:
+        f.write(f"pasta={pasta}\n")
+        f.write(f"deck={deck}\n")
+
+def main():
+    print("=== Ankipy - Importador Automático para Anki ===\n")
+    
+    ultima_pasta, ultimo_deck = carregar_ultima_config()
+    
+    prompt_pasta = "📂 Pasta com .txt e MP3s"
+    if ultima_pasta:
+        prompt_pasta += f" (Enter para reutilizar '{ultima_pasta}')"
+    prompt_pasta += ": "
+    pasta_input = input(prompt_pasta).strip()
+    if pasta_input == "" and ultima_pasta:
+        pasta = ultima_pasta
+    else:
+        pasta = pasta_input
+    if not Path(pasta).exists():
+        print("❌ Pasta não encontrada.")
+        return
+    
+    prompt_deck = "📚 Nome do deck"
+    if ultimo_deck:
+        prompt_deck += f" (Enter para reutilizar '{ultimo_deck}')"
+    prompt_deck += ": "
+    deck_input = input(prompt_deck).strip()
+    if deck_input == "" and ultimo_deck:
+        deck = ultimo_deck
+    else:
+        deck = deck_input
+    if not deck:
+        print("❌ Nome do deck inválido.")
+        return
+    
+    salvar_ultima_config(pasta, deck)
+    
+    txts = list(Path(pasta).glob("*.txt"))
+    if not txts:
+        print("❌ Nenhum arquivo .txt encontrado na pasta.")
+        return
+    caminho_txt = txts[0]
+    print(f"📄 Arquivo: {caminho_txt.name}")
+    
+    pares = ler_pares_do_texto(caminho_txt)
+    print(f"🔍 {len(pares)} pares de frases.")
+    
+    copiar_mp3s_para_media(pasta)
+    
+    try:
+        anki_call("version")
+        print("✅ Conectado ao AnkiConnect.")
+    except Exception as e:
+        print(f"❌ Erro de conexão: {e}")
+        print("Abra o Anki e instale AnkiConnect (código 2055492159).")
+        return
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    modelo_nome = f"Ankipy_{timestamp}"
+    print(f"🆕 Modelo: {modelo_nome}")
+    
     modelo = {
         "modelName": modelo_nome,
         "inOrderFields": ["Frente", "Verso"],
@@ -100,74 +250,9 @@ def criar_modelo_unico(deck_nome, modelo_nome):
     }
     anki_call("createModel", **modelo)
     print(f"✅ Modelo '{modelo_nome}' criado.")
-
-def criar_cartoes_anki(deck_nome, modelo_nome, pares, pasta_mp3):
-    anki_call("createDeck", deck=deck_nome)
-    print(f"✅ Deck '{deck_nome}' pronto.")
     
-    mp3s_info = {sanitizar_nome(f): f for f in os.listdir(pasta_mp3) if f.endswith('.mp3')}
-    total = 0
-    for ingles, portugues in pares:
-        frase_chave = sanitizar_nome(ingles[:50])
-        mp3_encontrado = None
-        for chave, nome_mp3 in mp3s_info.items():
-            if frase_chave.startswith(chave) or chave.startswith(frase_chave):
-                mp3_encontrado = nome_mp3
-                break
-        if mp3_encontrado:
-            frente = f"{ingles} [sound:{mp3_encontrado}]"
-            print(f"🔊 Áudio: {mp3_encontrado}")
-        else:
-            frente = ingles
-            print(f"⚠️ Sem áudio: {ingles[:40]}...")
-        nota = {
-            "deckName": deck_nome,
-            "modelName": modelo_nome,
-            "fields": {"Frente": frente, "Verso": portugues},
-            "tags": ["importado_auto"],
-            "options": {"allowDuplicate": False}
-        }
-        anki_call("addNote", note=nota)
-        total += 1
-    return total
-
-def main():
-    print("=== Ankipy - Importador Automático para Anki ===\n")
-    pasta = input("📂 Pasta com .txt e MP3s: ").strip()
-    if not Path(pasta).exists():
-        print("❌ Pasta não encontrada.")
-        return
-    deck = input("📚 Nome do deck (ex: 'Inglês::Frases'): ").strip()
-    if not deck:
-        print("❌ Deck inválido.")
-        return
-
-    txts = list(Path(pasta).glob("*.txt"))
-    if not txts:
-        print("❌ Nenhum arquivo .txt encontrado.")
-        return
-    caminho_txt = txts[0]
-    print(f"📄 Arquivo: {caminho_txt.name}")
-
-    pares = ler_pares_do_texto(caminho_txt)
-    print(f"🔍 {len(pares)} pares de frases.")
-
-    copiar_mp3s_para_media(pasta)
-
-    try:
-        anki_call("version")
-        print("✅ Conectado ao AnkiConnect.")
-    except Exception as e:
-        print(f"❌ Erro: {e}\nAbra o Anki e instale AnkiConnect (código 2055492159).")
-        return
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    modelo_nome = f"Ankipy_{timestamp}"
-    print(f"🆕 Modelo: {modelo_nome}")
-
-    criar_modelo_unico(deck, modelo_nome)
-    total = criar_cartoes_anki(deck, modelo_nome, pares, pasta)
-    print(f"\n🎉 {total} cartões adicionados ao deck '{deck}'.")
+    criar_cartoes_anki(deck, modelo_nome, pares, pasta)
+    print("\n✨ Importação concluída! Verifique seu deck no Anki.")
 
 if __name__ == "__main__":
     main()
