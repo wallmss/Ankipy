@@ -92,9 +92,12 @@ Se você quiser modificar ou executar o código diretamente (sem o executável):
    ```bash
    python ankipy_gui.py
    
-5. Para gerar o executável você mesmo (com PyInstaller):
+5. Instalar Pyinstaller para poder gerar o executável (com PyInstaller):
    ```bash
    pip install pyinstaller Pillow
+
+6. Gerar executável:
+   ```bash
    pyinstaller --onefile --windowed --add-data "ankipy.ico;." --add-data "ankipy.png;." --add-data "GitHub_Invertocat_Black.png;." --icon=ankipy.ico --name AnkiPy ankipy_gui.py
    
 O arquivo será criado em dist/AnkiPy.exe.
