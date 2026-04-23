@@ -1,114 +1,127 @@
-# 🃏 Ankipy – Importador de Frases com Áudio
+<img src="https://raw.githubusercontent.com/wallmss/Ankipy/main/ankipy.png" width="80" align="left">
 
-Automatize a criação de flashcards no Anki a partir de um arquivo de texto e arquivos MP3.
-Para o curso do Mairo Vergara de inglês. Mas sinsta-se livre para usar o código de exemplo.
+# 🃏 AnkiPy
 
-## ✨ Funcionalidades
+### Importador automático de frases com áudio para o [Anki](https://apps.ankiweb.net/)
 
-- Lê um arquivo `.txt` com frases alternadas (inglês/português)
-- Associa automaticamente cada frase em inglês a um MP3 (baseado no início da frase)
-- Copia os áudios para a pasta `collection.media` do Anki
-- Cria um **deck** e um **modelo de nota novo** (não altera seus modelos existentes)
-- Utiliza o **AnkiConnect** para importar diretamente – sem arquivos CSV intermediários
-- Template personalizado: frente mostra inglês + áudio, verso mostra a frente + tradução
+[![Licença MIT](https://img.shields.io/badge/Licença-MIT-blue.svg)](LICENSE)
+[![Versão](https://img.shields.io/github/v/release/wallmss/Ankipy)](https://github.com/wallmss/Ankipy/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6)](https://microsoft.com)
 
-## 📋 Pré‑requisitos
+**AnkiPy** transforma automaticamente um arquivo de texto (.txt) com frases em inglês e suas traduções em **flashcards** no Anki, com áudio incluso.  
+Ideal para quem está fazendo o **[Curso de Inglês do Mairo Vergara](https://mairovergara.com)** ou qualquer outro estudo de idiomas.
 
-- [Anki](https://apps.ankiweb.net/) instalado
-- Complemento [AnkiConnect](https://ankiweb.net/shared/info/2055492159) (código `2055492159`)
-- Python 3.8 ou superior
+> ✅ **Versão 3.0 – Apenas um executável!**  
+> Nenhum arquivo extra, nenhuma instalação de Python. Baixe, configure uma única vez e importe dezenas de cartões em segundos.
 
-## 🚀 Como usar
+---
 
-### 1. Instalar dependências
+## 🚀 Como usar (para quem não programa)
 
-```bash
-pip install -r requirements.txt
-```
+### 1️⃣ Baixe o executável
+- Acesse a [página de Releases](https://github.com/wallmss/Ankipy/releases)
+- Baixe o arquivo `AnkiPy.exe` da versão mais recente
+- Coloque‑o em qualquer pasta do seu computador (por exemplo, `C:\AnkiPy`)
 
-### 2. Configurar o caminho da pasta de mídia do Anki
-Edite o arquivo config.txt (criado automaticamente na primeira execução) e cole o caminho completo da sua pasta collection.media.
+### 2️⃣ Instale o complemento AnkiConnect no Anki
+O AnkiPy se comunica com o Anki através do complemento **AnkiConnect**. Você precisa instalá‑lo.
 
-Como encontrar essa pasta?
+1. Abra o Anki
+2. Vá em **Ferramentas → Complementos → Obter Complementos…**
+3. Digite o código **`2055492159`** e clique em OK
+4. Reinicie o Anki (feche e abra novamente)
 
-Abra o Anki
+> ⚠️ O Anki **precisa estar aberto** enquanto o AnkiPy estiver rodando.
 
-Clique em Ferramentas → Gerenciar Arquivos de Mídia
+### 3️⃣ Configure a pasta `collection.media` do Anki
+O AnkiPy precisa saber onde o Anki guarda os arquivos de mídia (MP3, imagens).  
+Siga os passos:
 
-Clique em Abrir Pasta de Mídia
+1. No Anki, vá em **Ferramentas → Gerenciar Arquivos de Mídia**
+2. Clique no botão **Abrir Pasta de Mídia**
+3. Uma janela do Explorador será aberta. **Copie o caminho completo** que aparece na barra de endereços  
+   (exemplo: `C:\Users\SeuNome\AppData\Roaming\Anki2\Usuário 1\collection.media`)
+4. Execute o `AnkiPy.exe`
+5. Clique no botão **⚙️ Configurações**
+6. Cole o caminho no campo “Pasta collection.media do Anki” e clique em **Salvar**
 
-Copie o endereço que aparece na barra de endereços
+### 4️⃣ Importe suas frases
+- Na janela principal, clique em **Procurar** e selecione a pasta onde estão seus arquivos `.txt` e `.mp3`
+- Digite o nome do **deck** (pode ser um existente ou um novo, ex.: `Inglês::Frases`)
+- Clique em **▶ Iniciar Importação**
+- Se não houver nenhum arquivo `.txt`, o editor de texto integrado será aberto – cole ou digite as frases no formato:
 
-Exemplo (Windows):
-
-```text
-C:\Users\SeuNome\AppData\Roaming\Anki2\Usuário 1\collection.media
-```
-
-### 3. Preparar os arquivos
-Organize seus arquivos em uma pasta:
-
-Um arquivo .txt com frases no formato:
-
-```text
 Frase em inglês linha 1
 Tradução em português linha 1
 Frase em inglês linha 2
 Tradução em português linha 2
 ...
-```
 
-(linhas em branco são ignoradas)
 
-Arquivos MP3 com nomes como 33 he works hard.mp3, 34 but even so.mp3 etc.
-O script ignora o número inicial e compara o restante com o início da frase em inglês.
+- O editor tem **formatação básica** (negrito, itálico, cor), **localizador (Ctrl+F)** com contador de ocorrências, **zoom** e botão **📎 Importar arquivo .txt**
+- Ao salvar, a importação será feita automaticamente
 
-### 4. Executar
-primeiro abra o seu Anki no computador, depois no cmd na pasta do codigo execute:
+### 5️⃣ Resultado
+Os cartões serão criados no Anki com a **frente** mostrando a frase em inglês (com o botão de play para o áudio) e o **verso** mostrando a tradução, além da frente novamente (para relembrar).
 
-```bash
-python importar_anki.py
-```
+---
 
-Responda:
+## 🧰 Para quem programa (usar o código fonte)
 
-- Caminho da pasta com .txt e MP3s
-- Nome do deck
+Se você quiser modificar ou executar o código diretamente (sem o executável):
 
-Pronto! Os cartões aparecerão automaticamente no Anki.
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/wallmss/Ankipy.git
+   cd Ankipy
+   ```
+2. Crie um ambiente virtual (recomendado):
+   ```bash
+   python -m venv venv
+   .\venv\Scripts\activate   # Windows
+   source venv/bin/activate   # Linux/Mac
 
-⚙️ Exemplo de arquivo de entrada (exemplo.txt)
 
-```text
-Jack looked up at the pale blue sky,
-Jack olhou para o céu azul claro,
+3. Instale as dependências:
 
-and he said, “I came from Heaven.”
-e ele disse, “eu vim do céu”.
-```
+pip install -r requirements.txt
+Execute:
 
-🛠️ Personalização
-O modelo de nota criado tem o nome AnkiImporter_YYYYMMDD_HHMMSS para não conflitar.
+python ankipy_gui.py
+Para gerar o executável você mesmo (com PyInstaller):
 
-O template do verso é: {{FrontSide}}<hr id=answer>{{Verso}} (mostra a frente novamente).
+pip install pyinstaller Pillow
+pyinstaller --onefile --windowed --add-data "ankipy.ico;." --add-data "ankipy.png;." --add-data "GitHub_Invertocat_Black.png;." --icon=ankipy.ico --name AnkiPy ankipy_gui.py
+O arquivo será criado em dist/AnkiPy.exe.
 
-Se quiser outro template, edite a função criar_modelo_unico().
+🤔 Perguntas frequentes
+1. O executável é seguro?
+Sim, o código é 100% aberto. Alguns antivírus podem acusar falso‑positivo porque o PyInstaller empacota um interpretador Python – é normal.
 
-❓ Perguntas frequentes
-E se o áudio não tocar?
-Verifique se o arquivo MP3 foi copiado para a pasta collection.media (o script já faz isso) e se o nome do arquivo (sem número) é o início da frase em inglês.
+2. Posso usar AnkiPy no Linux/Mac?
+O código Python é multiplataforma, mas o executável é apenas para Windows. No Linux/Mac, use o código fonte diretamente.
 
-Posso importar para um deck existente?
-Sim, o deck pode já existir. As cartas serão adicionadas a ele.
+3. Preciso instalar o Python para rodar o .exe?
+Não. O executável já contém tudo o que é necessário.
 
-O que acontece se eu rodar o script duas vezes com o mesmo deck?
-Será criado um novo modelo (com timestamp diferente) e as cartas serão adicionadas ao mesmo deck, sem duplicatas (a menos que a frase seja exatamente igual).
+4. Onde ficam as configurações salvas?
+No Registro do Windows, em HKEY_CURRENT_USER\Software\Ankipy. Você pode apagar essa chave para resetar.
 
-Preciso instalar o AnkiConnect?
-Sim. Instale no Anki: Ferramentas → Complementos → Obter Complementos… → código 2055492159.
+5. Como faço para atualizar o programa?
+Baixe o novo .exe da última release e substitua o antigo. Suas configurações continuam salvas.
 
-📄 Licença
-MIT – use à vontade.
+📜 Licença
+MIT – use, modifique e distribua livremente, mantendo os créditos.
 
-🙏 Agradecimentos
-Ao Anki e ao AnkiConnect.
+👤 Créditos
+Desenvolvido por @wallmss
+Projetado para facilitar o estudo de idiomas com o Curso do Mairo Vergara.
+
+🔗 Site oficial do curso
+
+🤝 Contribuindo
+Sugestões, relatórios de bug e pull requests são muito bem‑vindos!
+Abra uma issue ou um pull request.
+
+📹 Vídeos tutoriais (em breve)
+Em breve serão adicionados GIFs e vídeos curtos mostrando cada passo. Por enquanto, siga as instruções escritas acima – é bem simples!
