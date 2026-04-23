@@ -51,11 +51,13 @@ Siga os passos:
 - Clique em **▶ Iniciar Importação**
 - Se não houver nenhum arquivo `.txt`, o editor de texto integrado será aberto – cole ou digite as frases no formato:
 
+```text
 Frase em inglês linha 1
 Tradução em português linha 1
 Frase em inglês linha 2
 Tradução em português linha 2
 ...
+```
 
 
 - O editor tem **formatação básica** (negrito, itálico, cor), **localizador (Ctrl+F)** com contador de ocorrências, **zoom** e botão **📎 Importar arquivo .txt**
@@ -83,15 +85,18 @@ Se você quiser modificar ou executar o código diretamente (sem o executável):
 
 
 3. Instale as dependências:
+   ```bash
+   pip install -r requirements.txt
 
-pip install -r requirements.txt
-Execute:
-
-python ankipy_gui.py
-Para gerar o executável você mesmo (com PyInstaller):
-
-pip install pyinstaller Pillow
-pyinstaller --onefile --windowed --add-data "ankipy.ico;." --add-data "ankipy.png;." --add-data "GitHub_Invertocat_Black.png;." --icon=ankipy.ico --name AnkiPy ankipy_gui.py
+4. Execute:
+   ```bash
+   python ankipy_gui.py
+   
+5. Para gerar o executável você mesmo (com PyInstaller):
+   ```bash
+   pip install pyinstaller Pillow
+   pyinstaller --onefile --windowed --add-data "ankipy.ico;." --add-data "ankipy.png;." --add-data "GitHub_Invertocat_Black.png;." --icon=ankipy.ico --name AnkiPy ankipy_gui.py
+   
 O arquivo será criado em dist/AnkiPy.exe.
 
 🤔 Perguntas frequentes
