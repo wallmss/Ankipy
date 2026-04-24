@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Ankipy - Interface Gráfica Completa (sem terminal)
-Versão 3.0.4 - Correção: importação imediata após salvar no editor
+Versão 3.1.1 - Correção do callback após edição e exportação HTML
 """
 
 import os
@@ -116,15 +116,6 @@ def sanitizar_nome(nome_arquivo):
     nome = re.sub(r'[^\w\s]', '', nome).lower()
     return nome
 
-def ler_pares_do_texto(caminho_txt):
-    with open(caminho_txt, 'r', encoding='utf-8') as f:
-        linhas = [linha.rstrip() for linha in f if linha.strip()]
-    pares = []
-    for i in range(0, len(linhas), 2):
-        if i+1 < len(linhas):
-            pares.append((linhas[i].strip(), linhas[i+1].strip()))
-    return pares
-
 def copiar_mp3s_para_media(pasta_origem, log_func):
     global PASTA_MIDIA_ANKI
     if PASTA_MIDIA_ANKI is None:
@@ -201,14 +192,15 @@ def criar_cartoes_anki(deck_nome, pares, pasta_mp3, log_func):
     total_adicionados = 0
     total_duplicados = 0
     
-    for ingles, portugues in pares:
+    for ingles_html, portugues in pares:
+        texto_puro = re.sub(r'<[^>]+>', '', ingles_html).strip()
         try:
-            if nota_existe(deck_nome, ingles):
-                log_func(f"⏭️ Frase duplicada, ignorando: {ingles[:50]}...")
+            if nota_existe(deck_nome, texto_puro):
+                log_func(f"⏭️ Frase duplicada, ignorando: {texto_puro[:50]}...")
                 total_duplicados += 1
                 continue
             
-            frase_chave = sanitizar_nome(ingles[:50])
+            frase_chave = sanitizar_nome(texto_puro[:50])
             mp3_encontrado = None
             for chave, nome_mp3 in mp3s_info.items():
                 if frase_chave.startswith(chave) or chave.startswith(frase_chave):
@@ -216,8 +208,8 @@ def criar_cartoes_anki(deck_nome, pares, pasta_mp3, log_func):
                     break
             
             if not mp3_encontrado:
-                log_func(f"\n⚠️ Áudio não encontrado para: {ingles[:60]}...")
-                caminho_audio = selecionar_audio_manual(ingles)
+                log_func(f"\n⚠️ Áudio não encontrado para: {texto_puro[:60]}...")
+                caminho_audio = selecionar_audio_manual(texto_puro)
                 if caminho_audio:
                     nome_arquivo = os.path.basename(caminho_audio)
                     destino_origem = Path(pasta_mp3) / nome_arquivo
@@ -232,34 +224,83 @@ def criar_cartoes_anki(deck_nome, pares, pasta_mp3, log_func):
                     mp3_encontrado = nome_arquivo
                     mp3s_info[sanitizar_nome(nome_arquivo)] = nome_arquivo
                 else:
-                    log_func(f"⏭️ Áudio ignorado para: {ingles[:40]}...")
+                    log_func(f"⏭️ Áudio ignorado para: {texto_puro[:40]}...")
             
             if mp3_encontrado:
-                frente = f"{ingles} [sound:{mp3_encontrado}]"
+                frente_html = f"{ingles_html} [sound:{mp3_encontrado}]"
                 log_func(f"🔊 Áudio vinculado: {mp3_encontrado}")
             else:
-                frente = ingles
+                frente_html = ingles_html
                 log_func(f"⚠️ Sem áudio, cartão será criado sem som.")
             
             nota = {
                 "deckName": deck_nome,
                 "modelName": MODELO_NOME,
-                "fields": {"Frente": frente, "Verso": portugues},
+                "fields": {"Frente": frente_html, "Verso": portugues},
                 "tags": ["importado_auto"],
                 "options": {"allowDuplicate": False}
             }
             anki_call("addNote", note=nota)
             total_adicionados += 1
-            log_func(f"✅ Cartão adicionado: {ingles[:50]}...")
+            log_func(f"✅ Cartão adicionado: {texto_puro[:50]}...")
         except Exception as e:
             if "duplicate" in str(e).lower():
-                log_func(f"⏭️ Duplicata detectada pelo Anki (pós-formatação), ignorando: {ingles[:50]}...")
+                log_func(f"⏭️ Duplicata detectada pelo Anki (pós-formatação), ignorando: {texto_puro[:50]}...")
                 total_duplicados += 1
             else:
                 log_func(f"❌ Erro inesperado: {e}")
     
     log_func(f"\n📊 Resumo: {total_adicionados} adicionados, {total_duplicados} duplicados evitados.")
     return total_adicionados
+
+# ----------------------------------------------------------------------
+# Conversor de tags Tkinter para HTML
+# ----------------------------------------------------------------------
+def text_area_to_html(text_area):
+    """
+    Converte o conteúdo do Text widget com tags para HTML.
+    Usa o método dump para capturar todas as tags corretamente.
+    """
+    html_parts = []
+    # Obtém todo o conteúdo em formato de dump
+    content = text_area.dump("1.0", tk.END)
+    
+    # Estado das tags ativas
+    active_tags = set()
+    # Mapeamento de tag para seu significado HTML
+    tag_map = {
+        "bold": ("<b>", "</b>"),
+        "italic": ("<i>", "</i>"),
+        "underline": ("<u>", "</u>"),
+    }
+    
+    for item in content:
+        key, value, index = item
+        if key == "tagon":
+            # Início de uma tag
+            tag = value
+            active_tags.add(tag)
+            # Se a tag tem mapeamento HTML, abre a tag
+            if tag in tag_map:
+                html_parts.append(tag_map[tag][0])
+            elif tag.startswith("color_"):
+                cor = tag.replace("color_", "#")
+                html_parts.append(f'<span style="color:{cor}">')
+        elif key == "tagoff":
+            # Fim de uma tag
+            tag = value
+            active_tags.discard(tag)
+            if tag in tag_map:
+                html_parts.append(tag_map[tag][1])
+            elif tag.startswith("color_"):
+                html_parts.append("</span>")
+        elif key == "text":
+            # Texto normal (pode conter caracteres especiais)
+            # Escapa caracteres HTML
+            text = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            html_parts.append(text)
+    
+    return "".join(html_parts)
 
 # ----------------------------------------------------------------------
 # Tooltip helper
@@ -309,17 +350,12 @@ def carregar_icone_janela(window):
         print(f"Erro ao carregar ícone: {e}")
 
 # ----------------------------------------------------------------------
-# Editor de texto (Toplevel) que chama a importação diretamente
+# Editor de texto (Toplevel) com exportação HTML e callback integrado
 # ----------------------------------------------------------------------
-def abrir_editor_texto(parent, pasta, callback):
+def abrir_editor_texto(parent, callback):
     """
-    Abre o editor de texto e, ao salvar, chama callback com o caminho do arquivo criado.
-    parent: janela principal
-    pasta: pasta onde salvar o temp_import.txt
-    callback: função que recebe o caminho do arquivo e dispara a importação
+    Abre o editor como janela Toplevel. Ao salvar, chama callback(html_content).
     """
-    resultado = {"texto": None, "cancelado": False}
-    
     root = tk.Toplevel(parent)
     root.title("Ankipy - Editor de Texto")
     root.geometry("1000x700")
@@ -340,7 +376,7 @@ def abrir_editor_texto(parent, pasta, callback):
     root.grab_set()
     root.focus_force()
     
-    # Área de texto (todo o resto do editor permanece igual)
+    # Área de texto
     text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("Arial", 12),
                                           bg='#1e2a2c', fg='#e0e0e0',
                                           insertbackground='white', selectbackground='#4c8b9c',
@@ -423,7 +459,8 @@ def abrir_editor_texto(parent, pasta, callback):
                 start, end = text_area.index(tk.SEL_FIRST), text_area.index(tk.SEL_LAST)
                 cor = colorchooser.askcolor(title="Cor do texto")[1]
                 if cor:
-                    tag = f"color_{cor.replace('#', '')}"
+                    color_hex = cor.lstrip('#')
+                    tag = f"color_{color_hex}"
                     text_area.tag_configure(tag, foreground=cor, font=(fonte_familia.get(), fonte_tamanho.get()))
                     text_area.tag_add(tag, start, end)
         except:
@@ -431,21 +468,27 @@ def abrir_editor_texto(parent, pasta, callback):
     
     def importar_arquivo():
         file_path = filedialog.askopenfilename(
-            title="Selecionar arquivo .txt",
-            filetypes=[("Arquivos de texto", "*.txt"), ("Todos os arquivos", "*.*")]
+            title="Selecionar arquivo .txt ou .html",
+            filetypes=[("Arquivos de texto", "*.txt"), ("Arquivos HTML", "*.html"), ("Todos os arquivos", "*.*")]
         )
         if file_path:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     conteudo = f.read()
-                text_area.delete("1.0", tk.END)
-                text_area.insert("1.0", conteudo)
+                if file_path.endswith('.html'):
+                    # Remove tags para exibição simples
+                    texto_puro = re.sub(r'<[^>]+>', '', conteudo)
+                    text_area.delete("1.0", tk.END)
+                    text_area.insert("1.0", texto_puro)
+                else:
+                    text_area.delete("1.0", tk.END)
+                    text_area.insert("1.0", conteudo)
                 messagebox.showinfo("Importado", f"Arquivo '{os.path.basename(file_path)}' carregado.")
                 atualizar_contagem()
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível ler o arquivo:\n{e}")
     
-    # Localizar
+    # ---------- Localizar (sem substituir) ----------
     find_window = None
     find_entry = None
     find_label = None
@@ -627,7 +670,7 @@ def abrir_editor_texto(parent, pasta, callback):
     
     btn_import = tk.Button(toolbar1, text="📎", width=3, command=importar_arquivo, **btn_style)
     btn_import.pack(side=tk.LEFT, padx=2, pady=2)
-    ToolTip(btn_import, "Importar arquivo .txt")
+    ToolTip(btn_import, "Importar arquivo .txt/.html")
     
     # Toolbar2
     tk.Label(toolbar2, text="Fonte:", bg='#2e3b3e', fg='white', font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=2)
@@ -664,7 +707,7 @@ def abrir_editor_texto(parent, pasta, callback):
     btn_salvar = tk.Button(frame_botoes, text="Salvar e Importar",
                            bg='#4cae4c', fg='white', padx=10, font=("Segoe UI", 10, "bold"))
     btn_salvar.pack(side=tk.RIGHT, padx=10)
-    ToolTip(btn_salvar, "Salvar o texto e importar como cartões")
+    ToolTip(btn_salvar, "Salvar o texto com formatação HTML e importar")
     btn_cancelar = tk.Button(frame_botoes, text="Cancelar",
                              bg='#d9534f', fg='white', padx=10, font=("Segoe UI", 10, "bold"))
     btn_cancelar.pack(side=tk.RIGHT, padx=5)
@@ -685,32 +728,23 @@ def abrir_editor_texto(parent, pasta, callback):
     atualizar_contagem()
     text_area.focus_set()
     
-    # Função salvar modificada: escreve o arquivo e chama callback
     def salvar():
-        conteudo = text_area.get("1.0", tk.END).rstrip("\n")
-        if not conteudo:
+        conteudo_html = text_area_to_html(text_area)
+        if not conteudo_html.strip():
             messagebox.showwarning("Aviso", "Nenhum texto foi inserido.")
             return
-        # Salvar em arquivo temporário
-        temp_txt = Path(pasta) / "temp_import.txt"
-        try:
-            with open(temp_txt, 'w', encoding='utf-8') as f:
-                f.write(conteudo)
-        except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível salvar o arquivo:\n{e}")
-            return
-        # Fechar editor
+        # Fecha a janela do editor
         if find_window and find_window.winfo_exists():
             find_window.destroy()
         root.destroy()
-        # Chamar callback com o caminho do arquivo
-        callback(temp_txt)
+        # Chama o callback com o HTML gerado
+        callback(conteudo_html)
     
     def cancelar():
-        resultado["cancelado"] = True
         if find_window and find_window.winfo_exists():
             find_window.destroy()
         root.destroy()
+        callback(None)  # sinaliza cancelamento
     
     btn_salvar.config(command=salvar)
     btn_cancelar.config(command=cancelar)
@@ -719,7 +753,7 @@ def abrir_editor_texto(parent, pasta, callback):
     root.mainloop()
 
 # ----------------------------------------------------------------------
-# Janela de configurações (inalterada)
+# Janela de configurações
 # ----------------------------------------------------------------------
 class ConfigWindow:
     def __init__(self, parent, on_save_callback):
@@ -779,7 +813,7 @@ class ConfigWindow:
             messagebox.showerror("Erro", "Caminho inválido ou pasta não encontrada.")
 
 # ----------------------------------------------------------------------
-# Interface gráfica principal (janela)
+# Interface gráfica principal
 # ----------------------------------------------------------------------
 class AnkipyGUI:
     def __init__(self):
@@ -837,16 +871,15 @@ class AnkipyGUI:
         credit_label.pack(side=tk.LEFT, padx=5)
         credit_label.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/wallmss"))
         
-        # Pasta
+        # Campos de pasta e deck
         frame_pasta = ttk.Frame(main_frame)
         frame_pasta.pack(fill=tk.X, pady=5)
-        ttk.Label(frame_pasta, text="📂 Pasta com .txt e MP3s:").pack(side=tk.LEFT)
+        ttk.Label(frame_pasta, text="📂 Pasta com .txt ou .html e MP3s:").pack(side=tk.LEFT)
         entry_pasta = ttk.Entry(frame_pasta, textvariable=self.pasta_var)
         entry_pasta.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         btn_browse = ttk.Button(frame_pasta, text="Procurar", command=self.browse_pasta)
         btn_browse.pack(side=tk.LEFT)
         
-        # Deck
         frame_deck = ttk.Frame(main_frame)
         frame_deck.pack(fill=tk.X, pady=5)
         ttk.Label(frame_deck, text="📚 Nome do deck:").pack(side=tk.LEFT)
@@ -871,7 +904,7 @@ class AnkipyGUI:
     
     # ---------- Métodos ----------
     def browse_pasta(self):
-        pasta = filedialog.askdirectory(title="Selecione a pasta com .txt e MP3s")
+        pasta = filedialog.askdirectory(title="Selecione a pasta com .txt ou .html e MP3s")
         if pasta:
             self.pasta_var.set(pasta)
     
@@ -901,7 +934,7 @@ class AnkipyGUI:
         pasta = self.pasta_var.get().strip()
         deck = self.deck_var.get().strip()
         if not pasta or not Path(pasta).exists():
-            messagebox.showerror("Erro", "Pasta com .txt e MP3s inválida ou não encontrada.")
+            messagebox.showerror("Erro", "Pasta com .txt/.html e MP3s inválida ou não encontrada.")
             return
         if not deck:
             messagebox.showerror("Erro", "Nome do deck não pode ficar vazio.")
@@ -910,20 +943,59 @@ class AnkipyGUI:
         set_last_pasta(pasta)
         set_last_deck(deck)
         
-        txts = list(Path(pasta).glob("*.txt"))
-        if not txts:
-            self.log("❌ Nenhum arquivo .txt encontrado. Abrindo editor...")
-            # Abre o editor, que chamará o callback quando salvar
-            def callback(caminho_txt):
-                self.log(f"📄 Arquivo temporário criado: {caminho_txt.name}")
-                threading.Thread(target=self.realizar_importacao, args=(pasta, deck, caminho_txt), daemon=True).start()
-            abrir_editor_texto(self.root, pasta, callback)
+        # Verifica arquivos .txt ou .html
+        arquivos = list(Path(pasta).glob("*.txt")) + list(Path(pasta).glob("*.html"))
+        if not arquivos:
+            self.log("❌ Nenhum arquivo .txt ou .html encontrado. Abrindo editor...")
+            # Abre o editor com callback
+            def editor_callback(html_content):
+                if html_content:
+                    temp_html = Path(pasta) / "temp_import.html"
+                    with open(temp_html, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+                    self.log(f"📄 Arquivo HTML temporário criado: {temp_html.name}")
+                    # Depois de criar, prossegue com a importação
+                    self.processar_arquivo(pasta, deck, temp_html)
+                else:
+                    self.log("❌ Nenhum texto fornecido. Abortando.")
+            # Executa o editor (bloqueia até fechar)
+            abrir_editor_texto(self.root, editor_callback)
         else:
-            caminho_txt = txts[0]
-            self.log(f"📄 Arquivo: {caminho_txt.name}")
-            threading.Thread(target=self.realizar_importacao, args=(pasta, deck, caminho_txt), daemon=True).start()
+            # Se já existir arquivo, usa o primeiro
+            arquivo = arquivos[0]
+            self.log(f"📄 Arquivo: {arquivo.name}")
+            self.processar_arquivo(pasta, deck, arquivo)
     
-    def realizar_importacao(self, pasta, deck, caminho_txt):
+    def processar_arquivo(self, pasta, deck, caminho_arquivo):
+        """Lê o arquivo (txt ou html), extrai pares e inicia a importação em thread."""
+        try:
+            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+                conteudo = f.read()
+        except Exception as e:
+            self.log(f"❌ Erro ao ler arquivo: {e}")
+            return
+        
+        # Divide por linhas (preserva quebras de linha originais)
+        linhas = conteudo.splitlines()
+        # Remove linhas vazias
+        linhas = [linha.strip() for linha in linhas if linha.strip()]
+        pares = []
+        for i in range(0, len(linhas), 2):
+            if i+1 < len(linhas):
+                ingles = linhas[i]
+                portugues = linhas[i+1]
+                pares.append((ingles, portugues))
+        
+        self.log(f"🔍 {len(pares)} pares de frases encontrados.")
+        
+        # Copiar MP3s
+        self.log("Copiando arquivos de áudio...")
+        copiar_mp3s_para_media(pasta, self.log)
+        
+        # Inicia thread de importação
+        threading.Thread(target=self.importar, args=(deck, pares, pasta), daemon=True).start()
+    
+    def importar(self, deck, pares, pasta):
         self.log("=== Iniciando importação ===\n")
         try:
             anki_call("version")
@@ -932,12 +1004,6 @@ class AnkipyGUI:
             self.log(f"❌ Erro de conexão: {e}")
             self.log("Certifique-se que o Anki está aberto e o complemento AnkiConnect instalado.")
             return
-        
-        self.log("Copiando arquivos de áudio...")
-        copiar_mp3s_para_media(pasta, self.log)
-        
-        pares = ler_pares_do_texto(caminho_txt)
-        self.log(f"🔍 {len(pares)} pares de frases encontrados.")
         
         criar_ou_atualizar_modelo(self.log)
         criar_cartoes_anki(deck, pares, pasta, self.log)
