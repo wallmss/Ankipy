@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Ankipy - Interface Gráfica Completa (sem terminal)
-Versão 2.9.0 - Configurações aprimoradas, sem mensagem inicial
+Versão 3.0.2 - Correção do editor na thread principal
 """
 
 import os
@@ -289,17 +289,21 @@ class ToolTip:
             self.tipwindow = None
 
 def carregar_icone_janela(window):
-    ico_path = resource_path("ankipy.ico")
-    png_path = resource_path("ankipy.png")
-    if os.path.exists(png_path):
-        img = tk.PhotoImage(file=png_path)
-        window.iconphoto(True, img)
-        setattr(window, '_icon_img', img)
-    if os.path.exists(ico_path):
-        try:
-            window.iconbitmap(ico_path)
-        except:
-            pass
+    try:
+        ico_path = resource_path("ankipy.ico")
+        png_path = resource_path("ankipy.png")
+        if os.path.exists(png_path):
+            img = tk.PhotoImage(file=png_path)
+            # Mantém referência
+            window._icon_img = img
+            window.iconphoto(True, img)
+        if os.path.exists(ico_path):
+            try:
+                window.iconbitmap(ico_path)
+            except:
+                pass
+    except Exception:
+        pass  # Falha silenciosa - não crítico
 
 def abrir_editor_texto():
     resultado = {"texto": None, "cancelado": False}
@@ -823,7 +827,7 @@ class AnkipyGUI:
         # --- Campos principais ---
         frame_pasta = ttk.Frame(main_frame)
         frame_pasta.pack(fill=tk.X, pady=5)
-        ttk.Label(frame_pasta, text="📂 Pasta com os MP3s:").pack(side=tk.LEFT)
+        ttk.Label(frame_pasta, text="📂 Pasta com .txt e MP3s:").pack(side=tk.LEFT)
         entry_pasta = ttk.Entry(frame_pasta, textvariable=self.pasta_var)
         entry_pasta.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         btn_browse = ttk.Button(frame_pasta, text="Procurar", command=self.browse_pasta)
@@ -852,7 +856,7 @@ class AnkipyGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
     
     def browse_pasta(self):
-        pasta = filedialog.askdirectory(title="Selecione a pasta com os MP3s")
+        pasta = filedialog.askdirectory(title="Selecione a pasta com .txt e MP3s")
         if pasta:
             self.pasta_var.set(pasta)
     
@@ -882,7 +886,7 @@ class AnkipyGUI:
         pasta = self.pasta_var.get().strip()
         deck = self.deck_var.get().strip()
         if not pasta or not Path(pasta).exists():
-            messagebox.showerror("Erro", "Pasta com os MP3s inválida ou não encontrada.")
+            messagebox.showerror("Erro", "Pasta com .txt e MP3s inválida ou não encontrada.")
             return
         if not deck:
             messagebox.showerror("Erro", "Nome do deck não pode ficar vazio.")
@@ -890,21 +894,8 @@ class AnkipyGUI:
         
         set_last_pasta(pasta)
         set_last_deck(deck)
-        threading.Thread(target=self.importar, args=(pasta, deck), daemon=True).start()
-    
-    def importar(self, pasta, deck):
-        self.log("=== Iniciando importação ===\n")
-        try:
-            anki_call("version")
-            self.log("✅ Conectado ao AnkiConnect.")
-        except Exception as e:
-            self.log(f"❌ Erro de conexão: {e}")
-            self.log("Certifique-se que o Anki está aberto e o complemento AnkiConnect instalado.")
-            return
         
-        self.log("Copiando arquivos de áudio...")
-        copiar_mp3s_para_media(pasta, self.log)
-        
+        # Verificar .txt ANTES da thread (para evitar tkinter na thread secundária)
         txts = list(Path(pasta).glob("*.txt"))
         if not txts:
             self.log("❌ Nenhum arquivo .txt encontrado. Abrindo editor...")
@@ -922,6 +913,21 @@ class AnkipyGUI:
             caminho_txt = txts[0]
             self.log(f"📄 Arquivo: {caminho_txt.name}")
         
+        threading.Thread(target=self.importar, args=(pasta, deck, caminho_txt), daemon=True).start()
+    
+    def importar(self, pasta, deck, caminho_txt):
+        self.log("=== Iniciando importação ===\n")
+        try:
+            anki_call("version")
+            self.log("✅ Conectado ao AnkiConnect.")
+        except Exception as e:
+            self.log(f"❌ Erro de conexão: {e}")
+            self.log("Certifique-se que o Anki está aberto e o complemento AnkiConnect instalado.")
+            return
+        
+        self.log("Copiando arquivos de áudio...")
+        copiar_mp3s_para_media(pasta, self.log)
+        
         pares = ler_pares_do_texto(caminho_txt)
         self.log(f"🔍 {len(pares)} pares de frases encontrados.")
         
@@ -931,8 +937,6 @@ class AnkipyGUI:
     
     def on_close(self):
         self.root.destroy()
-    
-    # (os métodos browse_pasta, log, start_import, importar, on_close, open_settings, atualizar_config permanecem idênticos)
 
 # ----------------------------------------------------------------------
 # Ponto de entrada
