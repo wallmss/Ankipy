@@ -66,6 +66,15 @@ Tradução em português linha 2
 ### 5️⃣ Resultado
 Os cartões serão criados no Anki com a **frente** mostrando a frase em inglês (com o botão de play para o áudio) e o **verso** mostrando a tradução, além da frente novamente (para relembrar).
 
+## ⚠️ Limitação conhecida
+
+O editor de texto do AnkiPy **não suporta desfazer (Ctrl+Z) para ações de formatação** (negrito, itálico, cor, etc.).  
+Isso ocorre porque o widget `Text` do Tkinter (biblioteca usada para a interface) só registra alterações de texto (digitação, colagem, exclusão), mas não formatações.  
+Portanto, ao aplicar negrito, não será possível desfazer apenas aquela formatação (o Ctrl+Z desfará a última ação de digitação/cola).  
+
+**Recomendação:** use o botão "Limpar formatação" para remover estilos indesejados.  
+É uma limitação técnica, pois o AnkiPy foi pensado como um aplicativo simples e leve, sem a complexidade de um editor full-featured.
+
 ---
 
 ## 🧰 Para quem programa (usar o código fonte)
