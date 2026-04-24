@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Ankipy - Interface Gráfica Completa (sem terminal)
-Versão 3.0.2 - Correção do editor na thread principal
+Versão 3.0.4 - Correção: importação imediata após salvar no editor
 """
 
 import os
@@ -35,7 +35,7 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 # ----------------------------------------------------------------------
 def resource_path(relative_path):
     try:
-        base_path = sys._MEIPASS # type: ignore
+        base_path = sys._MEIPASS #type: ignore
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
@@ -262,7 +262,7 @@ def criar_cartoes_anki(deck_nome, pares, pasta_mp3, log_func):
     return total_adicionados
 
 # ----------------------------------------------------------------------
-# Editor de texto (completo, com formatação, localizar, etc.)
+# Tooltip helper
 # ----------------------------------------------------------------------
 class ToolTip:
     def __init__(self, widget, text):
@@ -288,30 +288,44 @@ class ToolTip:
             self.tipwindow.destroy()
             self.tipwindow = None
 
+# ----------------------------------------------------------------------
+# Carregar ícone da janela (usando recursos embutidos)
+# ----------------------------------------------------------------------
 def carregar_icone_janela(window):
     try:
         ico_path = resource_path("ankipy.ico")
         png_path = resource_path("ankipy.png")
         if os.path.exists(png_path):
             img = tk.PhotoImage(file=png_path)
-            # Mantém referência
-            window._icon_img = img
-            window.iconphoto(True, img)
+            if img:
+                window.iconphoto(True, img)
+                setattr(window, '_icon_img', img)
         if os.path.exists(ico_path):
             try:
                 window.iconbitmap(ico_path)
             except:
                 pass
-    except Exception:
-        pass  # Falha silenciosa - não crítico
+    except Exception as e:
+        print(f"Erro ao carregar ícone: {e}")
 
-def abrir_editor_texto():
+# ----------------------------------------------------------------------
+# Editor de texto (Toplevel) que chama a importação diretamente
+# ----------------------------------------------------------------------
+def abrir_editor_texto(parent, pasta, callback):
+    """
+    Abre o editor de texto e, ao salvar, chama callback com o caminho do arquivo criado.
+    parent: janela principal
+    pasta: pasta onde salvar o temp_import.txt
+    callback: função que recebe o caminho do arquivo e dispara a importação
+    """
     resultado = {"texto": None, "cancelado": False}
     
-    root = tk.Tk()
+    root = tk.Toplevel(parent)
     root.title("Ankipy - Editor de Texto")
-    carregar_icone_janela(root)
     root.geometry("1000x700")
+    carregar_icone_janela(root)
+    
+    # Centralizar
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     if screen_width is None or screen_height is None:
@@ -322,16 +336,17 @@ def abrir_editor_texto():
     root.geometry(f"+{x}+{y}")
     root.configure(bg='#2e3b3e')
     
-    root.lift()
+    root.transient(parent)
+    root.grab_set()
     root.focus_force()
-    root.attributes('-topmost', True)
-    root.after(200, lambda: root.attributes('-topmost', False))
     
+    # Área de texto (todo o resto do editor permanece igual)
     text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("Arial", 12),
                                           bg='#1e2a2c', fg='#e0e0e0',
                                           insertbackground='white', selectbackground='#4c8b9c',
                                           undo=True)
     
+    # Toolbars
     toolbar1 = tk.Frame(root, bg='#2e3b3e', height=35)
     toolbar1.pack_propagate(False)
     toolbar2 = tk.Frame(root, bg='#2e3b3e', height=35)
@@ -347,6 +362,9 @@ def abrir_editor_texto():
         text_area.tag_configure("bold", font=(fonte_familia.get(), fonte_tamanho.get(), "bold"))
         text_area.tag_configure("italic", font=(fonte_familia.get(), fonte_tamanho.get(), "italic"))
         text_area.tag_configure("underline", font=(fonte_familia.get(), fonte_tamanho.get(), "underline"))
+        for tag in text_area.tag_names():
+            if tag.startswith("color_"):
+                text_area.tag_configure(tag, font=(fonte_familia.get(), fonte_tamanho.get()))
     
     def aplicar_formatacao(tag):
         def aplicar():
@@ -427,7 +445,7 @@ def abrir_editor_texto():
             except Exception as e:
                 messagebox.showerror("Erro", f"Não foi possível ler o arquivo:\n{e}")
     
-    # Localizar (sem substituir)
+    # Localizar
     find_window = None
     find_entry = None
     find_label = None
@@ -667,15 +685,26 @@ def abrir_editor_texto():
     atualizar_contagem()
     text_area.focus_set()
     
+    # Função salvar modificada: escreve o arquivo e chama callback
     def salvar():
         conteudo = text_area.get("1.0", tk.END).rstrip("\n")
         if not conteudo:
             messagebox.showwarning("Aviso", "Nenhum texto foi inserido.")
             return
-        resultado["texto"] = conteudo
+        # Salvar em arquivo temporário
+        temp_txt = Path(pasta) / "temp_import.txt"
+        try:
+            with open(temp_txt, 'w', encoding='utf-8') as f:
+                f.write(conteudo)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar o arquivo:\n{e}")
+            return
+        # Fechar editor
         if find_window and find_window.winfo_exists():
             find_window.destroy()
         root.destroy()
+        # Chamar callback com o caminho do arquivo
+        callback(temp_txt)
     
     def cancelar():
         resultado["cancelado"] = True
@@ -686,14 +715,11 @@ def abrir_editor_texto():
     btn_salvar.config(command=salvar)
     btn_cancelar.config(command=cancelar)
     root.protocol("WM_DELETE_WINDOW", cancelar)
-    root.mainloop()
     
-    if resultado["cancelado"]:
-        return None
-    return resultado["texto"]
+    root.mainloop()
 
 # ----------------------------------------------------------------------
-# Janela de configurações
+# Janela de configurações (inalterada)
 # ----------------------------------------------------------------------
 class ConfigWindow:
     def __init__(self, parent, on_save_callback):
@@ -703,32 +729,24 @@ class ConfigWindow:
         self.window.title("Configurações do Ankipy")
         self.window.geometry("650x200")
         self.window.configure(bg='#2e3b3e')
-        self.window.resizable(True, False)  # permite redimensionar horizontalmente
+        self.window.resizable(True, False)
         self.window.transient(parent)
         self.window.grab_set()
-        
-        # Ícone da janela
         carregar_icone_janela(self.window)
         
         main_frame = ttk.Frame(self.window, padding=15)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Campo da pasta collection.media
         ttk.Label(main_frame, text="📁 Pasta collection.media do Anki:").grid(row=0, column=0, sticky='w', padx=5, pady=10)
         self.media_var = tk.StringVar(value=get_media_folder())
         entry_media = ttk.Entry(main_frame, textvariable=self.media_var, width=50)
         entry_media.grid(row=0, column=1, padx=5, pady=10, sticky='ew')
         btn_browse = ttk.Button(main_frame, text="Procurar", command=self.browse_media)
         btn_browse.grid(row=0, column=2, padx=5)
-        
-        # Botão de ajuda (interrogação) dentro da janela de configurações
         btn_help = ttk.Button(main_frame, text="❓", width=3, command=self.show_help)
         btn_help.grid(row=0, column=3, padx=5)
-        
-        # Configurar expansão da coluna do entry
         main_frame.columnconfigure(1, weight=1)
         
-        # Botões OK e Cancelar
         btn_frame = ttk.Frame(main_frame)
         btn_frame.grid(row=1, column=0, columnspan=4, pady=15)
         ttk.Button(btn_frame, text="Salvar", command=self.save).pack(side=tk.LEFT, padx=5)
@@ -773,22 +791,19 @@ class AnkipyGUI:
         self.root.minsize(600, 480)
         carregar_icone_janela(self.root)
         
-        # Centralizar a janela na tela
+        # Centralizar
         self.root.update_idletasks()
         largura = self.root.winfo_width()
         altura = self.root.winfo_height()
         x = (self.root.winfo_screenwidth() // 2) - (largura // 2)
         y = (self.root.winfo_screenheight() // 2) - (altura // 2)
         self.root.geometry(f"{largura}x{altura}+{x}+{y}")
-        
-        # Dar foco (sem topmost fixo)
         self.root.lift()
         self.root.focus_force()
         
-        # Carregar última configuração
+        # Carregar último caminho e deck do registro
         self.last_pasta = get_last_pasta()
         self.last_deck = get_last_deck()
-        
         self.pasta_var = tk.StringVar(value=self.last_pasta if self.last_pasta else "")
         self.deck_var = tk.StringVar(value=self.last_deck if self.last_deck else "")
         
@@ -796,13 +811,11 @@ class AnkipyGUI:
         main_frame = ttk.Frame(self.root, padding=15)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # === CABEÇALHO ===
+        # Cabeçalho
         header_frame = ttk.Frame(main_frame)
         header_frame.pack(fill=tk.X, pady=(0, 10))
-        
         title = ttk.Label(header_frame, text="AnkiPy", font=("Arial", 20, "bold"))
         title.pack(side=tk.LEFT)
-        
         right_header = ttk.Frame(header_frame)
         right_header.pack(side=tk.RIGHT)
         
@@ -824,7 +837,7 @@ class AnkipyGUI:
         credit_label.pack(side=tk.LEFT, padx=5)
         credit_label.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/wallmss"))
         
-        # --- Campos principais ---
+        # Pasta
         frame_pasta = ttk.Frame(main_frame)
         frame_pasta.pack(fill=tk.X, pady=5)
         ttk.Label(frame_pasta, text="📂 Pasta com .txt e MP3s:").pack(side=tk.LEFT)
@@ -833,6 +846,7 @@ class AnkipyGUI:
         btn_browse = ttk.Button(frame_pasta, text="Procurar", command=self.browse_pasta)
         btn_browse.pack(side=tk.LEFT)
         
+        # Deck
         frame_deck = ttk.Frame(main_frame)
         frame_deck.pack(fill=tk.X, pady=5)
         ttk.Label(frame_deck, text="📚 Nome do deck:").pack(side=tk.LEFT)
@@ -855,6 +869,7 @@ class AnkipyGUI:
         
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
     
+    # ---------- Métodos ----------
     def browse_pasta(self):
         pasta = filedialog.askdirectory(title="Selecione a pasta com .txt e MP3s")
         if pasta:
@@ -895,27 +910,20 @@ class AnkipyGUI:
         set_last_pasta(pasta)
         set_last_deck(deck)
         
-        # Verificar .txt ANTES da thread (para evitar tkinter na thread secundária)
         txts = list(Path(pasta).glob("*.txt"))
         if not txts:
             self.log("❌ Nenhum arquivo .txt encontrado. Abrindo editor...")
-            texto_editado = abrir_editor_texto()
-            if texto_editado:
-                temp_txt = Path(pasta) / "temp_import.txt"
-                with open(temp_txt, 'w', encoding='utf-8') as f:
-                    f.write(texto_editado)
-                caminho_txt = temp_txt
-                self.log(f"📄 Arquivo temporário criado: {temp_txt.name}")
-            else:
-                self.log("❌ Nenhum texto fornecido. Abortando.")
-                return
+            # Abre o editor, que chamará o callback quando salvar
+            def callback(caminho_txt):
+                self.log(f"📄 Arquivo temporário criado: {caminho_txt.name}")
+                threading.Thread(target=self.realizar_importacao, args=(pasta, deck, caminho_txt), daemon=True).start()
+            abrir_editor_texto(self.root, pasta, callback)
         else:
             caminho_txt = txts[0]
             self.log(f"📄 Arquivo: {caminho_txt.name}")
-        
-        threading.Thread(target=self.importar, args=(pasta, deck, caminho_txt), daemon=True).start()
+            threading.Thread(target=self.realizar_importacao, args=(pasta, deck, caminho_txt), daemon=True).start()
     
-    def importar(self, pasta, deck, caminho_txt):
+    def realizar_importacao(self, pasta, deck, caminho_txt):
         self.log("=== Iniciando importação ===\n")
         try:
             anki_call("version")
